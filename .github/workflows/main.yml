@@ -1,0 +1,32 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: |
+          cd EnterpriseApp
+          xcodegen generate
+
+      - name: Build Archive
+        run: |
+          xcodebuild archive -project EnterpriseApp/EnterpriseApp.xcodeproj -scheme EnterpriseApp -archivePath build/EnterpriseApp.xcarchive
+
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive -archivePath build/EnterpriseApp.xcarchive -exportPath ipa -exportOptionsPlist ExportOptions.plist
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: EnterpriseApp
+          path: ipa/
