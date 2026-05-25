@@ -1,47 +1,35 @@
 name: Build iOS IPA
+on:
+  workflow_dispatch:
 
-  on:
-    workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
 
-  jobs:
-    build:
-      runs-on: macos-latest
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v4
+      - name: Generate Xcode Project
+        run: xcodegen generate
 
-        - name: Show repo structure
-          run: |
-            pwd
-            ls -la
+      - name: Build Archive
+        run: |
+          xcodebuild archive \
+            -project EnterpriseApp.xcodeproj \
+            -scheme EnterpriseApp \
+            -archivePath build/EnterpriseApp.xcarchive
 
-        - name: Show files in swiftui folder
-          run: |
-            cd Desktop/IOS封装/swiftui
-            pwd
-            ls -la
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/EnterpriseApp.xcarchive \
+            -exportPath ipa \
+            -exportOptionsPlist ExportOptions.plist
 
-        - name: Install XcodeGen
-          run: brew install xcodegen
-
-        - name: Generate Xcode project
-          run: |
-            cd Desktop/IOS封装/swiftui
-            xcodegen generate
-
-        - name: Build archive
-          run: |
-            cd Desktop/IOS封装/swiftui
-            xcodebuild archive -project EnterpriseApp.xcodeproj -scheme EnterpriseApp -archivePath build.xcarchive
-
-        - name: Export IPA
-          run: |
-            cd Desktop/IOS封装/swiftui
-            xcodebuild -exportArchive -archivePath build.xcarchive -exportPath . -exportOptionsPlist ExportOptions.plist
-
-        - name: Upload IPA
-          uses: actions/upload-artifact@v4
-          with:
-            name: EnterpriseApp
-            path: "Desktop/IOS封装/swiftui/*.ipa"
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: EnterpriseApp
+          path: ipa/
