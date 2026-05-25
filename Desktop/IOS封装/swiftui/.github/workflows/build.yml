@@ -10,15 +10,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Show files
+      - name: Show current directory
+        run: pwd
+
+      - name: Show all files recursively
+        run: find . -type f -name "*.yml" -o -name "*.plist" -o -name "*.swift" | head -50
+
+      - name: Show root files
         run: ls -la
+
+      - name: Check project.yml exists
+        run: cat project.yml | head -3
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Show generated project
+        run: ls -la *.xcodeproj 2>/dev/null || echo "No xcodeproj found"
 
       - name: Build archive
         run: xcodebuild archive -project EnterpriseApp.xcodeproj -scheme EnterpriseApp -archivePath build.xcarchive
