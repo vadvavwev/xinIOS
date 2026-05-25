@@ -1,51 +1,30 @@
 name: Build iOS IPA
-
 on:
   workflow_dispatch:
 
 jobs:
-  build-ipa:
+  build:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 进入你的项目根目录
-      - name: Enter project directory
-        run: cd Desktop/IOS封装/swiftui
+      - name: 查看所有文件
+        run: ls -la
 
-      # 安装 xcodegen
-      - name: Install XcodeGen
-        run: |
-          cd Desktop/IOS封装/swiftui
-          brew install xcodegen
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
 
-      # 生成 Xcode 项目
-      - name: Generate Xcode Project
-        run: |
-          cd Desktop/IOS封装/swiftui
-          xcodegen generate
+      - name: 生成 Xcode 项目
+        run: xcodegen generate
 
-      # 编译归档
-      - name: Build Archive
-        run: |
-          cd Desktop/IOS封装/swiftui
-          xcodebuild archive \
-            -project EnterpriseApp/EnterpriseApp.xcodeproj \
-            -scheme EnterpriseApp \
-            -archivePath build/EnterpriseApp.xcarchive
+      - name: 编译归档
+        run: xcodebuild archive -project EnterpriseApp.xcodeproj -scheme EnterpriseApp -archivePath build.xcarchive
 
-      # 导出 IPA
-      - name: Export IPA
-        run: |
-          cd Desktop/IOS封装/swiftui
-          xcodebuild -exportArchive \
-            -archivePath build/EnterpriseApp.xcarchive \
-            -exportPath ipa \
-            -exportOptionsPlist ExportOptions.plist
+      - name: 导出 IPA
+        run: xcodebuild -exportArchive -archivePath build.xcarchive -exportPath . -exportOptionsPlist ExportOptions.plist
 
-      # 上传 IPA
-      - name: Upload IPA
+      - name: 上传 IPA
         uses: actions/upload-artifact@v4
         with:
-          name: EnterpriseApp
-          path: Desktop/IOS封装/swiftui/ipa/
+          name: EnterpriseApp.ipa
+          path: "*.ipa"
