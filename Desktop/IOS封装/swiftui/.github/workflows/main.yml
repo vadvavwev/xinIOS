@@ -11,8 +11,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Show files
-        run: ls -la
+      - name: Debug - show working directory
+        run: |
+          pwd
+          ls -la
+
+      - name: Debug - check project.yml
+        run: |
+          echo "=== project.yml exists? ==="
+          test -f project.yml && echo "YES" || echo "NO"
+          echo "=== project.yml content ==="
+          cat project.yml
+          echo "=== END ==="
+
+      - name: Debug - show swift files
+        run: |
+          find . -type f -name "*.swift" | head -10
 
       - name: Install XcodeGen
         run: brew install xcodegen
