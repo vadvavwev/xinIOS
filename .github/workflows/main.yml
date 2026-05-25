@@ -8,43 +8,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 进入你的项目根目录
-      - name: 进入项目目录
-        run: cd Desktop/IOS封装/swiftui
+      - name: 显示所有文件（查看真实路径）
+        run: ls -la
 
-      # 安装 xcodegen
       - name: 安装 XcodeGen
-        run: |
-          cd Desktop/IOS封装/swiftui
-          brew install xcodegen
+        run: brew install xcodegen
 
-      # 生成 Xcode 项目
       - name: 生成 Xcode 项目
-        run: |
-          cd Desktop/IOS封装/swiftui
-          xcodegen generate
+        run: xcodegen generate
 
-      # 编译归档（注意：这里用你的文件夹名「企业应用」）
-      - name: 编译归档
-        run: |
-          cd Desktop/IOS封装/swiftui
-          xcodebuild archive \
-            -project 企业应用/企业应用.xcodeproj \
-            -scheme 企业应用 \
-            -archivePath build/企业应用.xcarchive
+      - name: 编译打包
+        run: xcodebuild archive -project "企业应用.xcodeproj" -scheme "企业应用" -archivePath app.xcarchive
 
-      # 导出 IPA
       - name: 导出 IPA
-        run: |
-          cd Desktop/IOS封装/swiftui
-          xcodebuild -exportArchive \
-            -archivePath build/企业应用.xcarchive \
-            -exportPath ipa \
-            -exportOptionsPlist ExportOptions.plist
+        run: xcodebuild -exportArchive -archivePath app.xcarchive -exportPath output -exportOptionsPlist ExportOptions.plist
 
-      # 上传 IPA
-      - name: 上传 IPA
+      - name: 上传 IPA 安装包
         uses: actions/upload-artifact@v4
         with:
-          name: 企业应用
-          path: Desktop/IOS封装/swiftui/ipa/
+          name: EnterpriseApp
+          path: output/
