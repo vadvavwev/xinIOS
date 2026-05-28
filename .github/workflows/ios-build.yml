@@ -7,6 +7,7 @@ on:
 
 env:
   NODE_VERSION: '20'
+  CI: 'false'
 
 jobs:
   build-web:
@@ -33,40 +34,37 @@ jobs:
           echo "APP_DIR=$APP_DIR"
           echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
 
-      - name: Debug environment
+      - name: Debug pnpm config
         env:
           APP_DIR: ${{ env.APP_DIR }}
         run: |
-          echo "=== DEBUG ==="
-          echo "pnpm version: $(pnpm --version)"
-          echo "node version: $(node --version)"
-          echo "APP_DIR: $APP_DIR"
-          cd "$APP_DIR"
-          echo "=== package.json ==="
-          cat package.json
+          echo "=== PNPM CONFIG ==="
+          pnpm config list
+          echo "=== CI ENV ==="
+          echo "CI=$CI"
 
-      - name: Install dependencies (no frozen lockfile, no ignore-scripts)
+      - name: Install dependencies (explicit no-frozen-lockfile)
         env:
           APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd "$APP_DIR"
           pwd
-          ls -la
+          echo "=== DISABLING FROZEN LOCKFILE ==="
+          echo "frozen-lockfile=false" >> .npmrc
+          echo "prefer-frozen-lockfile=false" >> .npmrc
+          cat .npmrc
 
-          echo "=== Run pnpm install ==="
-          pnpm install 2>&1
+          echo "=== RUN PNPM INSTALL ==="
+          pnpm install --no-frozen-lockfile 2>&1
 
-      - name: Verify node_modules integrity
+      - name: Verify node_modules
         env:
           APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd "$APP_DIR"
           echo "===== VERIFY NODE_MODULES ====="
-          ls -la
-
           if [ -d "node_modules" ]; then
             echo "node_modules EXISTS"
-            ls -la node_modules/ | head -20
           else
             echo "ERROR: node_modules MISSING"
             exit 1
@@ -75,22 +73,17 @@ jobs:
           echo "===== VERIFY VITE ====="
           if [ -d "node_modules/vite" ]; then
             echo "vite EXISTS"
-            ls -la node_modules/vite/
           else
             echo "ERROR: vite MISSING"
-            ls -la node_modules/ | grep vite || true
+            ls node_modules/ | grep vite || true
             exit 1
           fi
-
-          echo "===== VERIFY BINARY ====="
-          ls -la node_modules/.bin/ 2>/dev/null | head -10 || echo ".bin not found"
 
       - name: Build web
         env:
           APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd "$APP_DIR"
-          echo "=== Run pnpm build ==="
           pnpm build
 
       - name: Sync iOS
@@ -99,16 +92,6 @@ jobs:
         run: |
           cd "$APP_DIR"
           pnpm exec cap sync ios
-
-      - name: Verify dist and ios
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
-        run: |
-          cd "$APP_DIR"
-          echo "=== dist ==="
-          ls -la dist/
-          echo "=== ios ==="
-          ls -la ios/
 
       - name: Upload iOS project
         env:
@@ -143,15 +126,11 @@ jobs:
           path: ${{ env.APP_DIR }}/ios/
 
       - name: List iOS directory
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           ls -la ${{ env.APP_DIR }}/ios/
           ls -la ${{ env.APP_DIR }}/ios/App/
 
       - name: Build Archive (unsigned)
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd ${{ env.APP_DIR }}/ios/App
           xcodebuild archive \
@@ -165,14 +144,10 @@ jobs:
             CODE_SIGN_IDENTITY=""
 
       - name: Create Payload and Package IPA
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           mkdir -p ${{ env.APP_DIR }}/ipa/Payload
-
           APP_PATH=$(find ${{ env.APP_DIR }}/ios/App/build -name "*.app" -type d 2>/dev/null | head -1)
           echo "Found app: $APP_PATH"
-
           if [ -n "$APP_PATH" ]; then
             cp -R "$APP_PATH" ${{ env.APP_DIR }}/ipa/Payload/
             cd ${{ env.APP_DIR }}/ipa
@@ -180,13 +155,10 @@ jobs:
             ls -lh App.ipa
           else
             echo "ERROR: .app not found"
-            ls -laR ${{ env.APP_DIR }}/ios/App/build/
             exit 1
           fi
 
       - name: Upload IPA
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
