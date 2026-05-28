@@ -10,8 +10,8 @@ env:
   CI: 'false'
 
 jobs:
-  build-web:
-    runs-on: ubuntu-latest
+  build-ios:
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,24 +34,27 @@ jobs:
           echo "APP_DIR=$APP_DIR"
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
 
-      - name: Debug pnpm config
+      - name: Debug environment
         run: |
-          echo "=== PNPM CONFIG ==="
-          pnpm config list
-          echo "=== CI ENV ==="
-          echo "CI=$CI"
+          echo "=== DEBUG ==="
+          echo "pwd: $(pwd)"
+          echo "APP_DIR: $APP_DIR"
+          echo "ls -la:"
+          ls -la
+          echo "=== PNPM VERSION ==="
+          pnpm --version
+          echo "=== NODE VERSION ==="
+          node --version
 
       - name: Install dependencies
         run: |
-          echo "APP_DIR=$APP_DIR"
           cd "$APP_DIR"
           pwd
-
-          echo "=== DISABLING FROZEN LOCKFILE ==="
+          echo "=== DISABLE FROZEN LOCKFILE ==="
           printf 'frozen-lockfile=false\nprefer-frozen-lockfile=false\n' >> .npmrc
           cat .npmrc
 
-          echo "=== RUN PNPM INSTALL ==="
+          echo "=== PNPM INSTALL ==="
           pnpm install --no-frozen-lockfile 2>&1
 
       - name: Verify node_modules
@@ -83,52 +86,15 @@ jobs:
           cd "$APP_DIR"
           pnpm exec cap sync ios
 
-      - name: Verify dist and ios
+      - name: Verify iOS directory
         run: |
           cd "$APP_DIR"
-          echo "=== dist ==="
-          ls -la dist/
-          echo "=== ios ==="
+          echo "=== VERIFY IOS ==="
           ls -la ios/
+          ls -la ios/App/
+          ls -la ios/App/App.xcodeproj/
 
-      - name: Upload iOS project
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-project
-          path: "$APP_DIR/ios/"
-          retention-days: 7
-
-  build-ipa:
-    needs: build-web
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Find APP_DIR
-        id: find-app-dir
-        run: |
-          APP_DIR="$(find . -name 'capacitor.config.ts' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
-          if [ -z "$APP_DIR" ]; then
-            APP_DIR="$(find . -name 'package.json' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
-          fi
-          echo "APP_DIR=$APP_DIR"
-          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
-
-      - name: Download iOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ios-project
-          path: "$APP_DIR/ios/"
-
-      - name: List iOS directory
-        run: |
-          echo "=== ios root ==="
-          ls -la "$APP_DIR/ios/"
-          echo "=== ios/App ==="
-          ls -la "$APP_DIR/ios/App/"
-
-      - name: Build Archive (unsigned)
+      - name: Build iOS Archive (unsigned)
         run: |
           cd "$APP_DIR/ios/App"
           xcodebuild archive \
@@ -139,16 +105,22 @@ jobs:
             -sdk iphoneos \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Verify archive
+        run: |
+          echo "=== VERIFY ARCHIVE ==="
+          ls -laR "$APP_DIR/ios/App/build/"
 
       - name: Create Payload and Package IPA
         run: |
           mkdir -p "$APP_DIR/ipa/Payload"
 
           APP_PATH="$(find "$APP_DIR/ios/App/build" -name '*.app' -type d 2>/dev/null | head -1)"
-          echo "Found app: $APP_PATH"
+          echo "Found .app: $APP_PATH"
 
-          if [ -n "$APP_PATH" ]; then
+          if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
             cp -R "$APP_PATH" "$APP_DIR/ipa/Payload/"
             cd "$APP_DIR/ipa"
             zip -ry App.ipa Payload
