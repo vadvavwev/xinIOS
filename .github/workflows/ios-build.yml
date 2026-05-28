@@ -24,23 +24,36 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@9
 
-      - name: Find APP_DIR and change to it
+      - name: Find APP_DIR
+        id: find-app-dir
         run: |
           APP_DIR="$(find . -name 'capacitor.config.ts' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           if [ -z "$APP_DIR" ]; then
             APP_DIR="$(find . -name 'package.json' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           fi
-          cd "$APP_DIR"
+          echo "APP_DIR=$APP_DIR"
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
-          echo "Working directory: $(pwd)"
+
+      - name: Debug - Verify APP_DIR
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "APP_DIR from env: $APP_DIR"
+          echo "Files in APP_DIR:"
+          ls -la "$APP_DIR"
 
       - name: Install dependencies
         run: |
+          cd "$APP_DIR"
+          pwd
           printf 'frozen-lockfile=false\nprefer-frozen-lockfile=false\n' >> .npmrc
+          cat .npmrc
           pnpm install --no-frozen-lockfile 2>&1
 
-      - name: Verify node_modules and vite
+      - name: Verify node_modules
         run: |
+          cd "$APP_DIR"
+          echo "=== WORKING DIRECTORY ==="
+          pwd
           if [ -d "node_modules" ]; then
             echo "node_modules EXISTS"
           else
@@ -55,20 +68,31 @@ jobs:
           fi
 
       - name: Build web
-        run: pnpm build
+        run: |
+          cd "$APP_DIR"
+          pwd
+          ls -la index.html package.json vite.config.ts 2>/dev/null || echo "Build files check"
+          pnpm build
 
       - name: Sync iOS
-        run: pnpm exec cap sync ios
+        run: |
+          cd "$APP_DIR"
+          pwd
+          ls -la dist/ 2>/dev/null || echo "dist check"
+          pnpm exec cap sync ios
 
       - name: Verify iOS directory
         run: |
-          echo "=== ios ==="
+          cd "$APP_DIR"
+          echo "=== WORKING DIRECTORY ==="
+          pwd
           ls -la ios/
           ls -la ios/App/
 
       - name: Build iOS Archive
         run: |
-          cd ios/App
+          cd "$APP_DIR/ios/App"
+          pwd
           xcodebuild archive \
             -project App.xcodeproj \
             -scheme App \
@@ -80,13 +104,14 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
 
-      - name: Verify archive
+      - name: Verify archive and create IPA
         run: |
-          echo "=== build ==="
-          ls -laR ios/App/build/
+          cd "$APP_DIR"
+          pwd
+          echo "=== VERIFY BUILD ==="
+          ls -la ios/App/build/
+          ls -la ios/App/build/App.xcarchive/ 2>/dev/null || echo "xcarchive check"
 
-      - name: Create IPA
-        run: |
           mkdir -p ipa/Payload
           APP_PATH="$(find ios/App/build -name '*.app' -type d 2>/dev/null | head -1)"
           echo "Found .app: $APP_PATH"
@@ -102,6 +127,13 @@ jobs:
           fi
 
       - name: Upload IPA
+        run: |
+          cd "$APP_DIR"
+          pwd
+          ls -la ipa/
+          ls -la ipa/App.ipa
+
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
