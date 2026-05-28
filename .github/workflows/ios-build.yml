@@ -7,60 +7,122 @@ on:
 
 env:
   NODE_VERSION: '20'
-  PWD: ${{ github.workspace }}
 
 jobs:
-  build-web:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: app
 
-      - name: Show repo structure
+      - name: Diagnose project structure
+        id: diagnose
         run: |
-          echo "=== Repo root ==="
+          echo "===== ROOT FILES ====="
+          pwd
           ls -la
-          echo "=== ./app ==="
-          ls -la ./app
+
+          echo "===== FIND PACKAGE.JSON ====="
+          find . -name "package.json" -not -path "*/node_modules/*"
+
+          echo "===== FIND PNPM LOCK ====="
+          find . -name "pnpm-lock.yaml" -not -path "*/node_modules/*"
+
+          echo "===== FIND CAPACITOR CONFIG ====="
+          find . -name "capacitor.config.*" -not -path "*/node_modules/*"
+
+          echo "===== FIND IOS DIRECTORY ====="
+          find . -type d -name "ios" -not -path "*/node_modules/*"
+
+          echo "===== FIND SRC DIRECTORY ====="
+          find . -type d -name "src" -not -path "*/node_modules/*"
+
+          echo "===== LOCATE APP DIR ====="
+          APP_DIR=$(find . -name "capacitor.config.ts" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          fi
+          echo "APP_DIR=$APP_DIR"
+
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+
+      - name: Verify critical files
+        run: |
+          cd "${{ env.APP_DIR }}"
+          echo "===== VERIFY IN APP_DIR ====="
+          pwd
+          ls -la package.json pnpm-lock.yaml capacitor.config.ts 2>/dev/null || echo "Some files missing"
+
+  build-web:
+    needs: diagnose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          path: ./app
 
       - name: Install pnpm
         run: npm install -g pnpm@9
 
-      - name: Install dependencies
-        working-directory: ./app
+      - name: Find APP_DIR
+        id: find-app-dir
         run: |
+          APP_DIR=$(find . -name "capacitor.config.ts" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          fi
+          echo "APP_DIR=$APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
+        run: |
+          cd "$APP_DIR"
           pwd
-          ls -la package.json pnpm-lock.yaml 2>/dev/null || echo "package files not found"
-          pnpm install --frozen-lockfile --ignore-scripts
+          ls -la package.json pnpm-lock.yaml
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          else
+            echo "No lockfile, running pnpm install"
+            pnpm install
+          fi
 
       - name: Build web
-        working-directory: ./app
-        run: pnpm build
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
+        run: |
+          cd "$APP_DIR"
+          pnpm build
 
       - name: Sync iOS
-        working-directory: ./app
-        run: pnpm exec cap sync ios
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
+        run: |
+          cd "$APP_DIR"
+          pnpm exec cap sync ios
 
       - name: Verify dist and ios
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         run: |
+          cd "$APP_DIR"
           echo "=== dist ==="
-          ls -la ./app/dist/ 2>/dev/null || echo "dist not found"
+          ls -la dist/
           echo "=== ios ==="
-          ls -la ./app/ios/ 2>/dev/null || echo "ios not found"
+          ls -la ios/
 
       - name: Upload iOS project
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-project
-          path: ./app/ios/
+          path: ${{ env.APP_DIR }}/ios/
           retention-days: 7
 
   build-ipa:
@@ -69,25 +131,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: app
+
+      - name: Find APP_DIR
+        id: find-app-dir
+        run: |
+          APP_DIR=$(find . -name "capacitor.config.ts" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          fi
+          echo "APP_DIR=$APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
 
       - name: Download iOS artifact
         uses: actions/download-artifact@v4
         with:
           name: ios-project
-          path: ./app/ios/
+          path: ${{ env.APP_DIR }}/ios/
 
       - name: List iOS directory
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         run: |
           echo "=== ios root ==="
-          ls -la ./app/ios/
+          ls -la ${{ env.APP_DIR }}/ios/
           echo "=== ios/App ==="
-          ls -la ./app/ios/App/
+          ls -la ${{ env.APP_DIR }}/ios/App/
 
       - name: Build Archive (unsigned)
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         run: |
-          cd ./app/ios/App
+          cd ${{ env.APP_DIR }}/ios/App
           xcodebuild archive \
             -project App.xcodeproj \
             -scheme App \
@@ -99,30 +173,39 @@ jobs:
             CODE_SIGN_IDENTITY=""
 
       - name: Create Payload directory
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         run: |
-          mkdir -p ./app/ipa/Payload
+          mkdir -p ${{ env.APP_DIR }}/ipa/Payload
 
       - name: Copy .app to Payload
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         run: |
-          APP_PATH=$(find ./app/ios/App/build -name "*.app" -type d 2>/dev/null | head -1)
+          cd ${{ env.APP_DIR }}
+          APP_PATH=$(find ios/App/build -name "*.app" -type d 2>/dev/null | head -1)
           echo "Found app: $APP_PATH"
           if [ -n "$APP_PATH" ]; then
-            cp -R "$APP_PATH" ./app/ipa/Payload/
+            cp -R "$APP_PATH" ipa/Payload/
           else
             echo "ERROR: .app not found"
-            ls -laR ./app/ios/App/build/
+            ls -laR ios/App/build/
             exit 1
           fi
 
       - name: Package IPA
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         run: |
-          cd ./app/ipa
+          cd ${{ env.APP_DIR }}/ipa
           zip -ry App.ipa Payload
           ls -lh App.ipa
 
       - name: Upload IPA
+        env:
+          APP_DIR: ${{ env.APP_DIR }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: ./app/ipa/App.ipa
+          path: ${{ env.APP_DIR }}/ipa/App.ipa
           retention-days: 7
