@@ -35,7 +35,7 @@ jobs:
       - name: Upload iOS project
         uses: actions/upload-artifact@v4
         with:
-          name: ios-project-${{ github.run_number }}
+          name: ios-project
           path: ios/
           retention-days: 7
 
@@ -49,7 +49,7 @@ jobs:
       - name: Download iOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: ios-project-${{ needs.build-web.outputs.run_number || github.run_number }}
+          name: ios-project
           path: ios/
 
       - name: List iOS directory
@@ -74,7 +74,14 @@ jobs:
 
       - name: Copy .app to Payload
         run: |
-          find ios/App/build -name "*.app" -type d | head -1 | xargs -I{} cp -R {} ipa/Payload/
+          APP_PATH=$(find ios/App/build -name "*.app" -type d 2>/dev/null | head -1)
+          if [ -n "$APP_PATH" ]; then
+            cp -R "$APP_PATH" ipa/Payload/
+          else
+            echo "ERROR: .app not found"
+            ls -la ios/App/build/
+            exit 1
+          fi
 
       - name: Package IPA
         run: |
@@ -85,6 +92,6 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa-${{ github.run_number }}
+          name: ios-ipa
           path: ipa/App.ipa
           retention-days: 7
