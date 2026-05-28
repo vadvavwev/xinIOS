@@ -24,51 +24,29 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@9
 
-      - name: Find APP_DIR
-        id: find-app-dir
+      - name: Find APP_DIR and change to it
         run: |
           APP_DIR="$(find . -name 'capacitor.config.ts' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           if [ -z "$APP_DIR" ]; then
             APP_DIR="$(find . -name 'package.json' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           fi
-          echo "APP_DIR=$APP_DIR"
+          cd "$APP_DIR"
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
-
-      - name: Debug environment
-        run: |
-          echo "=== DEBUG ==="
-          echo "pwd: $(pwd)"
-          echo "APP_DIR: $APP_DIR"
-          echo "ls -la:"
-          ls -la
-          echo "=== PNPM VERSION ==="
-          pnpm --version
-          echo "=== NODE VERSION ==="
-          node --version
+          echo "Working directory: $(pwd)"
 
       - name: Install dependencies
         run: |
-          cd "$APP_DIR"
-          pwd
-          echo "=== DISABLE FROZEN LOCKFILE ==="
           printf 'frozen-lockfile=false\nprefer-frozen-lockfile=false\n' >> .npmrc
-          cat .npmrc
-
-          echo "=== PNPM INSTALL ==="
           pnpm install --no-frozen-lockfile 2>&1
 
-      - name: Verify node_modules
+      - name: Verify node_modules and vite
         run: |
-          cd "$APP_DIR"
-          echo "=== VERIFY NODE_MODULES ==="
           if [ -d "node_modules" ]; then
             echo "node_modules EXISTS"
           else
             echo "ERROR: node_modules MISSING"
             exit 1
           fi
-
-          echo "=== VERIFY VITE ==="
           if [ -d "node_modules/vite" ]; then
             echo "vite EXISTS"
           else
@@ -77,26 +55,20 @@ jobs:
           fi
 
       - name: Build web
-        run: |
-          cd "$APP_DIR"
-          pnpm build
+        run: pnpm build
 
       - name: Sync iOS
-        run: |
-          cd "$APP_DIR"
-          pnpm exec cap sync ios
+        run: pnpm exec cap sync ios
 
       - name: Verify iOS directory
         run: |
-          cd "$APP_DIR"
-          echo "=== VERIFY IOS ==="
+          echo "=== ios ==="
           ls -la ios/
           ls -la ios/App/
-          ls -la ios/App/App.xcodeproj/
 
-      - name: Build iOS Archive (unsigned)
+      - name: Build iOS Archive
         run: |
-          cd "$APP_DIR/ios/App"
+          cd ios/App
           xcodebuild archive \
             -project App.xcodeproj \
             -scheme App \
@@ -110,24 +82,22 @@ jobs:
 
       - name: Verify archive
         run: |
-          echo "=== VERIFY ARCHIVE ==="
-          ls -laR "$APP_DIR/ios/App/build/"
+          echo "=== build ==="
+          ls -laR ios/App/build/
 
-      - name: Create Payload and Package IPA
+      - name: Create IPA
         run: |
-          mkdir -p "$APP_DIR/ipa/Payload"
-
-          APP_PATH="$(find "$APP_DIR/ios/App/build" -name '*.app' -type d 2>/dev/null | head -1)"
+          mkdir -p ipa/Payload
+          APP_PATH="$(find ios/App/build -name '*.app' -type d 2>/dev/null | head -1)"
           echo "Found .app: $APP_PATH"
-
           if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
-            cp -R "$APP_PATH" "$APP_DIR/ipa/Payload/"
-            cd "$APP_DIR/ipa"
+            cp -R "$APP_PATH" ipa/Payload/
+            cd ipa
             zip -ry App.ipa Payload
             ls -lh App.ipa
           else
             echo "ERROR: .app not found"
-            ls -laR "$APP_DIR/ios/App/build/"
+            ls -laR ios/App/build/
             exit 1
           fi
 
@@ -135,5 +105,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: "$APP_DIR/ipa/App.ipa"
+          path: ./ipa/App.ipa
           retention-days: 7
