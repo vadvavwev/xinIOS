@@ -15,16 +15,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm-action-setup@v4
-        with:
-          version: '9'
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+
+      - name: Install pnpm
+        run: npm install -g pnpm@9
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -33,7 +30,7 @@ jobs:
         run: pnpm build
 
       - name: Sync iOS
-        run: npx cap sync ios
+        run: pnpm exec cap sync ios
 
       - name: Upload iOS project
         uses: actions/upload-artifact@v4
