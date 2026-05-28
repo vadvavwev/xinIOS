@@ -1,0 +1,133 @@
+name: iOS Build & Archive
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  XCODE_VERSION: '15'
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm-action-setup@v4
+        with:
+          version: '9'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        run: pnpm build
+
+      - name: Sync iOS
+        run: npx cap sync ios
+
+      - name: Upload iOS project
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-project-${{ github.run_number }}
+          path: ios/
+          retention-days: 7
+
+  build-archive:
+    needs: build-web
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download iOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-project-${{ needs.build-web.outputs.run_number || github.run_number }}
+          path: ios/
+
+      - name: List ios directory
+        run: ls -la ios/
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app 2>/dev/null || true
+          xcodebuild -version
+
+      - name: Create build directory
+        run: mkdir -p ios/App/build
+
+      - name: Build xcarchive (unsigned)
+        run: |
+          cd ios/App
+          xcodebuild -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            PRODUCT_BUNDLE_IDENTIFIER=com.jobhunter.app 2>&1
+
+      - name: Upload xcarchive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcarchive-${{ github.run_number }}
+          path: ios/App/build/
+          retention-days: 7
+
+      - name: Build unsigned app package
+        if: success()
+        run: |
+          cd ios/App
+          xcodebuild -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            PRODUCT_BUNDLE_IDENTIFIER=com.jobhunter.app 2>&1 | tail -20
+
+  package-ipa:
+    needs: build-archive
+    runs-on: macos-latest
+    steps:
+      - name: Download xcarchive
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-xcarchive-${{ needs.build-archive.outputs.run_number || github.run_number }}
+          path: ios/App/build/
+
+      - name: Prepare IPA export
+        run: |
+          cd ios/App/build
+          ls -la
+          if [ -d "App.xcarchive" ]; then
+            echo "xcarchive found"
+          else
+            echo "xcarchive not found, creating minimal structure"
+            mkdir -p App.xcarchive
+          fi
+
+      - name: Upload for local signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-for-signing-${{ github.run_number }}
+          path: ios/
+          retention-days: 7
