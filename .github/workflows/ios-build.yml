@@ -27,42 +27,37 @@ jobs:
       - name: Find APP_DIR
         id: find-app-dir
         run: |
-          APP_DIR=$(find . -name "capacitor.config.ts" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          APP_DIR="$(find . -name 'capacitor.config.ts' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           if [ -z "$APP_DIR" ]; then
-            APP_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+            APP_DIR="$(find . -name 'package.json' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           fi
           echo "APP_DIR=$APP_DIR"
-          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
 
       - name: Debug pnpm config
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           echo "=== PNPM CONFIG ==="
           pnpm config list
           echo "=== CI ENV ==="
           echo "CI=$CI"
 
-      - name: Install dependencies (explicit no-frozen-lockfile)
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
+      - name: Install dependencies
         run: |
+          echo "APP_DIR=$APP_DIR"
           cd "$APP_DIR"
           pwd
+
           echo "=== DISABLING FROZEN LOCKFILE ==="
-          echo "frozen-lockfile=false" >> .npmrc
-          echo "prefer-frozen-lockfile=false" >> .npmrc
+          printf 'frozen-lockfile=false\nprefer-frozen-lockfile=false\n' >> .npmrc
           cat .npmrc
 
           echo "=== RUN PNPM INSTALL ==="
           pnpm install --no-frozen-lockfile 2>&1
 
       - name: Verify node_modules
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd "$APP_DIR"
-          echo "===== VERIFY NODE_MODULES ====="
+          echo "=== VERIFY NODE_MODULES ==="
           if [ -d "node_modules" ]; then
             echo "node_modules EXISTS"
           else
@@ -70,36 +65,37 @@ jobs:
             exit 1
           fi
 
-          echo "===== VERIFY VITE ====="
+          echo "=== VERIFY VITE ==="
           if [ -d "node_modules/vite" ]; then
             echo "vite EXISTS"
           else
             echo "ERROR: vite MISSING"
-            ls node_modules/ | grep vite || true
             exit 1
           fi
 
       - name: Build web
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd "$APP_DIR"
           pnpm build
 
       - name: Sync iOS
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         run: |
           cd "$APP_DIR"
           pnpm exec cap sync ios
 
+      - name: Verify dist and ios
+        run: |
+          cd "$APP_DIR"
+          echo "=== dist ==="
+          ls -la dist/
+          echo "=== ios ==="
+          ls -la ios/
+
       - name: Upload iOS project
-        env:
-          APP_DIR: ${{ env.APP_DIR }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-project
-          path: ${{ env.APP_DIR }}/ios/
+          path: "$APP_DIR/ios/"
           retention-days: 7
 
   build-ipa:
@@ -112,27 +108,29 @@ jobs:
       - name: Find APP_DIR
         id: find-app-dir
         run: |
-          APP_DIR=$(find . -name "capacitor.config.ts" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+          APP_DIR="$(find . -name 'capacitor.config.ts' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           if [ -z "$APP_DIR" ]; then
-            APP_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \; 2>/dev/null | head -1)
+            APP_DIR="$(find . -name 'package.json' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           fi
           echo "APP_DIR=$APP_DIR"
-          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
 
       - name: Download iOS artifact
         uses: actions/download-artifact@v4
         with:
           name: ios-project
-          path: ${{ env.APP_DIR }}/ios/
+          path: "$APP_DIR/ios/"
 
       - name: List iOS directory
         run: |
-          ls -la ${{ env.APP_DIR }}/ios/
-          ls -la ${{ env.APP_DIR }}/ios/App/
+          echo "=== ios root ==="
+          ls -la "$APP_DIR/ios/"
+          echo "=== ios/App ==="
+          ls -la "$APP_DIR/ios/App/"
 
       - name: Build Archive (unsigned)
         run: |
-          cd ${{ env.APP_DIR }}/ios/App
+          cd "$APP_DIR/ios/App"
           xcodebuild archive \
             -project App.xcodeproj \
             -scheme App \
@@ -145,16 +143,19 @@ jobs:
 
       - name: Create Payload and Package IPA
         run: |
-          mkdir -p ${{ env.APP_DIR }}/ipa/Payload
-          APP_PATH=$(find ${{ env.APP_DIR }}/ios/App/build -name "*.app" -type d 2>/dev/null | head -1)
+          mkdir -p "$APP_DIR/ipa/Payload"
+
+          APP_PATH="$(find "$APP_DIR/ios/App/build" -name '*.app' -type d 2>/dev/null | head -1)"
           echo "Found app: $APP_PATH"
+
           if [ -n "$APP_PATH" ]; then
-            cp -R "$APP_PATH" ${{ env.APP_DIR }}/ipa/Payload/
-            cd ${{ env.APP_DIR }}/ipa
+            cp -R "$APP_PATH" "$APP_DIR/ipa/Payload/"
+            cd "$APP_DIR/ipa"
             zip -ry App.ipa Payload
             ls -lh App.ipa
           else
             echo "ERROR: .app not found"
+            ls -laR "$APP_DIR/ios/App/build/"
             exit 1
           fi
 
@@ -162,5 +163,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: ${{ env.APP_DIR }}/ipa/App.ipa
+          path: "$APP_DIR/ipa/App.ipa"
           retention-days: 7
