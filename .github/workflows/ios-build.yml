@@ -1,0 +1,93 @@
+name: iOS IPA Build
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm-action-setup@v4
+        with:
+          version: '9'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        run: pnpm build
+
+      - name: Sync iOS
+        run: npx cap sync ios
+
+      - name: Upload iOS project
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-project-${{ github.run_number }}
+          path: ios/
+          retention-days: 7
+
+  build-ipa:
+    needs: build-web
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download iOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-project-${{ needs.build-web.outputs.run_number || github.run_number }}
+          path: ios/
+
+      - name: List iOS directory
+        run: ls -la ios/
+
+      - name: Build Archive (unsigned)
+        run: |
+          cd ios/App
+          xcodebuild archive \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Create Payload directory
+        run: |
+          mkdir -p ipa/Payload
+
+      - name: Copy .app to Payload
+        run: |
+          find ios/App/build -name "*.app" -type d | head -1 | xargs -I{} cp -R {} ipa/Payload/
+
+      - name: Package IPA
+        run: |
+          cd ipa
+          zip -ry App.ipa Payload
+          ls -lh App.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa-${{ github.run_number }}
+          path: ipa/App.ipa
+          retention-days: 7
