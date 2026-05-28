@@ -24,13 +24,15 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@9
 
-      - name: Find APP_DIR
+      - name: Find APP_DIR and get full path
         id: find-app-dir
         run: |
           APP_DIR="$(find . -name 'capacitor.config.ts' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           if [ -z "$APP_DIR" ]; then
             APP_DIR="$(find . -name 'package.json' -not -path '*/node_modules/*' -exec dirname {} \; 2>/dev/null | head -1)"
           fi
+          # Get absolute path
+          APP_DIR="$(cd "$APP_DIR" && pwd)"
           echo "APP_DIR=$APP_DIR"
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
 
@@ -104,13 +106,12 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
 
-      - name: Verify archive and create IPA
+      - name: Create IPA
         run: |
           cd "$APP_DIR"
           pwd
           echo "=== VERIFY BUILD ==="
           ls -la ios/App/build/
-          ls -la ios/App/build/App.xcarchive/ 2>/dev/null || echo "xcarchive check"
 
           mkdir -p ipa/Payload
           APP_PATH="$(find ios/App/build -name '*.app' -type d 2>/dev/null | head -1)"
@@ -126,10 +127,11 @@ jobs:
             exit 1
           fi
 
-      - name: Upload IPA
+      - name: Upload IPA Artifact
         run: |
           cd "$APP_DIR"
-          pwd
+          IPA_PATH="$APP_DIR/ipa/App.ipa"
+          echo "Uploading IPA from: $IPA_PATH"
           ls -la ipa/
           ls -la ipa/App.ipa
 
@@ -137,5 +139,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: ./ipa/App.ipa
+          path: ${{ env.APP_DIR }}/ipa/App.ipa
           retention-days: 7
